@@ -1,52 +1,95 @@
-def recommend_food(text):
+import streamlit as st
+import google.generativeai as genai
 
-    text = text.lower()
+# -----------------------------
+# 페이지 설정
+# -----------------------------
+st.set_page_config(
+    page_title="오늘 뭐 먹지?",
+    page_icon="🍚",
+    layout="centered"
+)
 
-    # 더운 날
-    if "덥" in text or "뜨겁" in text or "땀" in text:
+st.title("🍽️ 오늘 뭐 먹지?")
+st.caption("기분과 날씨에 따라 메뉴를 추천해주는 AI 챗봇")
 
-        foods = [
-            ("냉면", "시원하게 입맛 살려줘요 🧊"),
-            ("메밀소바", "더운 날 깔끔하게 최고예요"),
-            ("포케", "가볍고 시원해서 부담 없어요"),
-            ("콩국수", "여름엔 역시 콩국수죠 🌿")
-        ]
+# -----------------------------
+# API KEY 불러오기
+# -----------------------------
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+except Exception:
+    st.error("❌ API 키를 불러오지 못했어요.")
+    st.stop()
 
-    # 추운 날 / 피곤
-    elif "춥" in text or "피곤" in text or "국물" in text:
+# -----------------------------
+# 모델 설정
+# -----------------------------
+try:
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
+except Exception as e:
+    st.error(f"❌ 모델 생성 오류: {e}")
+    st.stop()
 
-        foods = [
-            ("국밥", "든든한 국물로 체력 충전 🔥"),
-            ("김치찌개", "따뜻하고 얼큰해요"),
-            ("칼국수", "비 오는 날 생각나는 메뉴 ☔"),
-            ("샤브샤브", "따뜻하고 건강하게!")
-        ]
+# -----------------------------
+# 채팅 기록 유지
+# -----------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {
+            "role": "assistant",
+            "content": "안녕! 오늘 기분이나 날씨를 말해주면 음식 메뉴를 추천해줄게 😋"
+        }
+    ]
 
-    # 스트레스 / 매운맛
-    elif "스트레스" in text or "매운" in text:
+# 기존 메시지 출력
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-        foods = [
-            ("마라탕", "화끈하게 스트레스 날리기 🌶️"),
-            ("엽떡", "맵부심 올라오는 맛"),
-            ("짬뽕", "얼큰한 국물이 최고!")
-        ]
+# -----------------------------
+# 사용자 입력
+# -----------------------------
+user_input = st.chat_input("예: 비 오는 날 우울해...")
 
-    # 가볍게
-    elif "가볍" in text or "다이어트" in text:
+if user_input:
+    # 사용자 메시지 저장
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
 
-        foods = [
-            ("샐러드", "산뜻하고 부담 없어요 🥗"),
-            ("포케", "건강하게 맛있게"),
-            ("샌드위치", "간단하지만 든든!")
-        ]
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-    # 기본 추천
-    else:
+    # 프롬프트 생성
+    prompt = f"""
+    너는 음식 추천 전문 AI야.
 
-        foods = [
-            ("돈까스", "오늘은 무난하게 맛있는 거!"),
-            ("파스타", "실패 없는 선택 🍝"),
-            ("초밥", "깔끔하게 즐기기 좋아요")
-        ]
+    사용자의 기분과 날씨를 분석해서:
+    1. 어울리는 음식 3개 추천
+    2. 이유 설명
+    3. 말투는 친근하고 귀엽게
 
-    return random.choice(foods)
+    사용자 입력:
+    {user_input}
+    """
+
+    # AI 응답
+    try:
+        response = model.generate_content(prompt)
+        bot_reply = response.text
+
+    except Exception as e:
+        bot_reply = f"❌ 오류가 발생했어요: {e}"
+
+    # 응답 저장
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": bot_reply
+    })
+
+    # 응답 출력
+    with st.chat_message("assistant"):
+        st.markdown(bot_reply)
