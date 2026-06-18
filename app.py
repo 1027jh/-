@@ -1,95 +1,140 @@
+```python
 import streamlit as st
-import google.generativeai as genai
+import pandas as pd
+from math import ceil
 
-# -----------------------------
-# 페이지 설정
-# -----------------------------
 st.set_page_config(
-    page_title="오늘 뭐 먹지?",
-    page_icon="🍚",
+    page_title="StudySprint",
+    page_icon="📚",
     layout="centered"
 )
 
-st.title("🍽️ 오늘 뭐 먹지?")
-st.caption("기분과 날씨에 따라 메뉴를 추천해주는 AI 챗봇")
+st.title("📚 StudySprint")
+st.subheader("시험기간 시간관리 도우미")
+
+st.write("시험 과목과 범위를 입력하면 공부 시간표를 자동으로 만들어줍니다!")
 
 # -----------------------------
-# API KEY 불러오기
+# 이미지 업로드
 # -----------------------------
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-    genai.configure(api_key=api_key)
-except Exception:
-    st.error("❌ API 키를 불러오지 못했어요.")
-    st.stop()
+st.header("🖼️ 공부 참고 이미지 업로드")
+
+uploaded_file = st.file_uploader(
+    "필기, 교과서, 시간표 사진 등을 업로드하세요",
+    type=["png", "jpg", "jpeg"]
+)
+
+if uploaded_file:
+    st.image(uploaded_file, caption="업로드한 이미지", use_container_width=True)
 
 # -----------------------------
-# 모델 설정
+# 입력 영역
 # -----------------------------
-try:
-    model = genai.GenerativeModel("gemini-2.5-flash-lite")
-except Exception as e:
-    st.error(f"❌ 모델 생성 오류: {e}")
-    st.stop()
+st.header("✏️ 시험 정보 입력")
 
-# -----------------------------
-# 채팅 기록 유지
-# -----------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {
-            "role": "assistant",
-            "content": "안녕! 오늘 기분이나 날씨를 말해주면 음식 메뉴를 추천해줄게 😋"
-        }
-    ]
+num_subjects = st.number_input(
+    "과목 개수",
+    min_value=1,
+    max_value=10,
+    value=3
+)
 
-# 기존 메시지 출력
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+subjects = []
 
-# -----------------------------
-# 사용자 입력
-# -----------------------------
-user_input = st.chat_input("예: 비 오는 날 우울해...")
+for i in range(num_subjects):
+    st.markdown(f"### 과목 {i+1}")
 
-if user_input:
-    # 사용자 메시지 저장
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
+    name = st.text_input(
+        f"과목명 {i+1}",
+        key=f"name_{i}"
+    )
+
+    scope = st.text_area(
+        f"시험 범위 {i+1}",
+        key=f"scope_{i}"
+    )
+
+    difficulty = st.slider(
+        f"난이도 {i+1}",
+        min_value=1,
+        max_value=5,
+        value=3,
+        key=f"diff_{i}"
+    )
+
+    subjects.append({
+        "name": name,
+        "scope": scope,
+        "difficulty": difficulty
     })
 
-    with st.chat_message("user"):
-        st.markdown(user_input)
+days_left = st.number_input(
+    "시험까지 남은 일수",
+    min_value=1,
+    max_value=60,
+    value=7
+)
 
-    # 프롬프트 생성
-    prompt = f"""
-    너는 음식 추천 전문 AI야.
+daily_hours = st.number_input(
+    "하루 공부 가능 시간",
+    min_value=1,
+    max_value=24,
+    value=4
+)
 
-    사용자의 기분과 날씨를 분석해서:
-    1. 어울리는 음식 3개 추천
-    2. 이유 설명
-    3. 말투는 친근하고 귀엽게
+# -----------------------------
+# 시간표 생성
+# -----------------------------
+if st.button("📅 공부 시간표 만들기"):
 
-    사용자 입력:
-    {user_input}
-    """
-
-    # AI 응답
     try:
-        response = model.generate_content(prompt)
-        bot_reply = response.text
+        valid_subjects = [
+            s for s in subjects
+            if s["name"].strip() != ""
+        ]
+
+        if not valid_subjects:
+            st.error("과목명을 최소 1개 이상 입력해주세요.")
+        else:
+
+            total_weight = sum(s["difficulty"] for s in valid_subjects)
+            total_hours = days_left * daily_hours
+
+            result = []
+
+            for s in valid_subjects:
+                allocated_hours = round(
+                    (s["difficulty"] / total_weight) * total_hours,
+                    1
+                )
+
+                per_day = round(allocated_hours / days_left, 1)
+
+                result.append({
+                    "과목": s["name"],
+                    "시험 범위": s["scope"],
+                    "총 공부 시간": f"{allocated_hours}시간",
+                    "하루 권장 시간": f"{per_day}시간"
+                })
+
+            df = pd.DataFrame(result)
+
+            st.success("시간표 생성 완료!")
+
+            st.subheader("📋 추천 공부 계획")
+            st.dataframe(df, use_container_width=True)
+
+            st.subheader("🔥 공부 팁")
+
+            st.info(
+                """
+                ✔ 어려운 과목은 오전에 공부하기  
+                ✔ 50분 공부 + 10분 휴식 추천  
+                ✔ 자기 전 암기과목 복습 추천  
+                ✔ 하루 최소 6시간 수면 유지하기
+                """
+            )
 
     except Exception as e:
-        bot_reply = f"❌ 오류가 발생했어요: {e}"
-
-    # 응답 저장
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": bot_reply
-    })
-
-    # 응답 출력
-    with st.chat_message("assistant"):
-        st.markdown(bot_reply)
+        st.error(f"오류가 발생했습니다: {e}")
+```
